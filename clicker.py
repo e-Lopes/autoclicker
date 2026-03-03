@@ -309,11 +309,9 @@ class App:
         self.selected_pid = 0
         self._capturing = False
         self._test_after_capture = False
-        self._compat_confirmed = False
 
         self.topmost_var = tk.BooleanVar(value=True)
         self.pause_minimized_var = tk.BooleanVar(value=False)
-        self.force_foreground_var = tk.BooleanVar(value=True)
         self.click_mode_var = tk.StringVar(value=CLICK_MODE_LABEL_BG)
         self.process_display_var = tk.StringVar(value="")
         self.next_step_var = tk.StringVar(value="Selecione o processo alvo")
@@ -419,25 +417,15 @@ class App:
         self.entry_interval.insert(0, "0.2")
         self.entry_interval.pack(side="left", padx=(8, 14))
 
-        self.cmb_click_mode = ctk.CTkComboBox(
-            row,
-            variable=self.click_mode_var,
-            state="readonly",
-            values=[
-                CLICK_MODE_LABEL_BG,
-                CLICK_MODE_LABEL_COMPAT,
-            ],
-            command=self._on_click_mode_changed,
-            width=310,
-        )
-        self.cmb_click_mode.pack(side="left")
-
-        self.chk_force_foreground = ctk.CTkCheckBox(
+        self.mode_badge = ctk.CTkLabel(
             step2,
-            text="Forcar foco no modo compatibilidade",
-            variable=self.force_foreground_var,
+            text="Modo: Background seguro (sem usar mouse real)",
+            fg_color="#1f3b2f",
+            text_color="#9af0b9",
+            corner_radius=8,
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.chk_force_foreground.pack(anchor="w", padx=14, pady=(8, 8))
+        self.mode_badge.pack(anchor="w", padx=14, pady=(8, 8))
 
         point_actions = ctk.CTkFrame(step2, fg_color="transparent")
         point_actions.pack(fill="x", padx=14, pady=(0, 12))
@@ -522,10 +510,9 @@ class App:
         self.log.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
         self._append_log("Atalho: F6 teste | F7 iniciar/parar | F8 capturar")
-        self._append_log("Recomendado: Background seguro (nao usa mouse real).")
+        self._append_log("Modo fixo: background seguro (nao usa mouse real).")
         self._toggle_topmost()
         self._update_action_availability()
-        self._on_click_mode_changed(self.click_mode_var.get())
 
     def _bind_shortcuts(self):
         self.root.bind("<F6>", lambda _e: self._test_single_click())
@@ -533,36 +520,7 @@ class App:
         self.root.bind("<F8>", lambda _e: self._capture_point_interactive())
 
     def _get_click_mode(self):
-        if self.click_mode_var.get() == CLICK_MODE_LABEL_COMPAT:
-            return CLICK_MODE_COMPAT
         return CLICK_MODE_BACKGROUND
-
-    def _on_click_mode_changed(self, _choice=None):
-        mode = self._get_click_mode()
-        if mode == CLICK_MODE_COMPAT:
-            self.chk_force_foreground.configure(state="normal")
-            self._append_log("Modo compatibilidade: usa mouse real e pode atrapalhar seu trabalho.")
-            self._set_next_step("modo compatibilidade selecionado")
-        else:
-            self.chk_force_foreground.configure(state="disabled")
-            self._compat_confirmed = False
-            self._append_log("Modo background seguro: nao usa mouse real.")
-            self._set_next_step("pronto para rodar em background")
-
-    def _confirm_compat_mode(self):
-        if self._get_click_mode() != CLICK_MODE_COMPAT:
-            return True
-        if self._compat_confirmed:
-            return True
-
-        ok = messagebox.askyesno(
-            "Aviso de Compatibilidade",
-            "Esse modo usa o mouse real e pode clicar fora se voce mover o cursor.\n\nContinuar mesmo assim?",
-        )
-        if ok:
-            self._compat_confirmed = True
-            return True
-        return False
 
     def _append_log(self, text: str):
         self.root.after(0, self._append_log_ui, text)
@@ -711,9 +669,6 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
-        if not self._confirm_compat_mode():
-            self._set_next_step("selecione background seguro para trabalhar sem interferencia")
-            return
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -737,7 +692,7 @@ class App:
             target_title,
             bool(self.pause_minimized_var.get()),
             self._get_click_mode(),
-            bool(self.force_foreground_var.get() and self._get_click_mode() == CLICK_MODE_COMPAT),
+            False,
         )
         self._append_log(f"Travado em HWND={target_hwnd}, PID={target_pid}, titulo='{target_title}'.")
         self.clicker.start()
@@ -787,9 +742,6 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
-        if not self._confirm_compat_mode():
-            self._set_next_step("teste cancelado no modo compatibilidade")
-            return
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -811,11 +763,10 @@ class App:
                 target_title,
                 bool(self.pause_minimized_var.get()),
                 self._get_click_mode(),
-                bool(self.force_foreground_var.get() and self._get_click_mode() == CLICK_MODE_COMPAT),
+                False,
             )
             self.clicker._send_click(target_hwnd, x, y)
-            mode_text = "compatibilidade" if self._get_click_mode() == CLICK_MODE_COMPAT else "background"
-            self._append_log(f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y} (modo: {mode_text}).")
+            self._append_log(f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y} (modo: background).")
             self._set_next_step("se o clique funcionou, inicie o autoclick.")
         except Exception as exc:
             messagebox.showerror("Erro", f"Falha no teste de clique: {exc}")
