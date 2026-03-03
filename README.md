@@ -1,39 +1,26 @@
-# AutoClicker DU
+# AutoClicker
 
-Auto click em janela especifica, com foco em clique em background para nao atrapalhar o uso normal da maquina.
+Autoclick em background para uma janela alvo, sem usar o mouse real do usuario.
 
-## Para usar (usuario final)
+## Uso rapido
 
 1. Abra `AutoClicker.exe`.
-2. Clique em `Atualizar` e selecione o jogo/app alvo.
-3. Clique em `Validar alvo`.
-4. Clique em `Capturar e testar`.
-5. Se funcionar, clique em `Iniciar autoclick`.
+2. Escolha o processo alvo.
+3. Clique em `VALIDAR`.
+4. Clique em `CAPTURAR` e marque o ponto.
+5. Clique em `TESTE`.
+6. Clique em `INICIAR`.
 
 Atalhos:
-- `F6`: testar 1 clique
+- `F6`: teste
 - `F7`: iniciar/parar
 - `F8`: capturar ponto
 
-## Gerar release para distribuir
+## Gerar release
 
 1. Execute `build_release.bat`.
-2. Aguarde o fim do processo.
-3. Envie o `.zip` gerado na pasta `release`.
+2. Use os arquivos em `release`:
+   - `AutoClicker.exe`
+   - `AutoClicker-win64.zip`
 
-O pacote gerado inclui:
-- `AutoClicker.exe`
-- `Executar AutoClicker.bat`
-- `LEIA-ME.txt`
-- `SHA256.txt`
-
-## Requisitos de build
-
-- Windows
-- Python 3.11+
-- Dependencias em `requirements.txt`
-
-## Observacoes importantes
-
-- Se o jogo roda como Administrador, rode o AutoClicker como Administrador tambem.
-- Alguns jogos com anti-cheat podem bloquear mensagens de clique em background.
+O script limpa a pasta `release` antes de gerar novos arquivos.
