@@ -3,8 +3,9 @@ import os
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
+import customtkinter as ctk
 import win32api
 import win32con
 import win32gui
@@ -286,12 +287,11 @@ class WindowClicker:
 
 
 class App:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: ctk.CTk):
         self.root = root
-        self.root.title("AutoClicker de Janela")
-        self.root.geometry("940x700")
+        self.root.title("AutoClicker DU")
+        self.root.geometry("980x740")
         self.root.resizable(False, False)
-        self.root.configure(bg="#f3f6fb")
 
         self.clicker = WindowClicker()
         self.clicker.on_log = self._append_log
@@ -302,246 +302,205 @@ class App:
         self.selected_pid = 0
         self._capturing = False
         self._test_after_capture = False
+
         self.topmost_var = tk.BooleanVar(value=True)
         self.pause_minimized_var = tk.BooleanVar(value=False)
         self.force_foreground_var = tk.BooleanVar(value=True)
-        self.click_mode_var = tk.StringVar(value=CLICK_MODE_BACKGROUND)
+        self.click_mode_var = tk.StringVar(value="Background (PostMessage)")
+        self.process_display_var = tk.StringVar(value="")
         self.next_step_var = tk.StringVar(value="Passo atual: selecione o processo alvo.")
         self.target_var = tk.StringVar(value="Alvo: nenhum")
+        self.status_var = tk.StringVar(value="Status: parado")
 
-        self._configure_styles()
         self._build_ui()
         self._refresh_windows()
         self._bind_shortcuts()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    def _configure_styles(self):
-        style = ttk.Style()
-        style.theme_use("clam")
-
-        style.configure("App.TFrame", background="#f3f6fb")
-        style.configure(
-            "Card.TLabelframe",
-            background="#ffffff",
-            bordercolor="#d6deeb",
-            relief="solid",
-            borderwidth=1,
-        )
-        style.configure(
-            "Card.TLabelframe.Label",
-            background="#ffffff",
-            foreground="#243041",
-            font=("Segoe UI", 10, "bold"),
-        )
-        style.configure("Title.TLabel", background="#f3f6fb", foreground="#1f2937", font=("Segoe UI", 16, "bold"))
-        style.configure("Subtle.TLabel", background="#f3f6fb", foreground="#5b6473", font=("Segoe UI", 9))
-        style.configure("Body.TLabel", background="#ffffff", foreground="#334155", font=("Segoe UI", 9))
-
-        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#2563eb")
-        style.map("Primary.TButton", background=[("active", "#1d4ed8"), ("disabled", "#9fb9f4")], foreground=[("disabled", "#eef4ff")])
-        style.configure("Neutral.TButton", font=("Segoe UI", 10), padding=(10, 8), background="#e8eef9", foreground="#1e2a3a")
-        style.map("Neutral.TButton", background=[("active", "#dce6f7"), ("disabled", "#f2f4f8")], foreground=[("disabled", "#91a0b8")])
-        style.configure("Good.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#0f9d58")
-        style.map("Good.TButton", background=[("active", "#0b8248"), ("disabled", "#96d8b8")], foreground=[("disabled", "#effaf4")])
-        style.configure("Stop.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#e53935")
-        style.map("Stop.TButton", background=[("active", "#c62828"), ("disabled", "#efabab")], foreground=[("disabled", "#fff2f2")])
-
-        style.configure("TEntry", padding=5)
-        style.configure("TCombobox", padding=5)
-
     def _build_ui(self):
-        main = ttk.Frame(self.root, padding=16, style="App.TFrame")
-        main.pack(fill="both", expand=True)
+        main = ctk.CTkFrame(self.root, fg_color="transparent")
+        main.pack(fill="both", expand=True, padx=16, pady=14)
 
-        header = ttk.Frame(main, style="App.TFrame")
-        header.pack(fill="x", pady=(0, 12))
+        header = ctk.CTkFrame(main, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 10))
 
-        ttk.Checkbutton(
-            header,
+        title_block = ctk.CTkFrame(header, fg_color="transparent")
+        title_block.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(title_block, text="AutoClicker DU", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(
+            title_block,
+            text="F6 Teste  |  F7 Iniciar/Parar  |  F8 Capturar",
+            text_color="#8a8f9d",
+            font=ctk.CTkFont(size=13),
+        ).pack(anchor="w", pady=(2, 0))
+
+        toggles = ctk.CTkFrame(header, fg_color="transparent")
+        toggles.pack(side="right", pady=(4, 0))
+        ctk.CTkCheckBox(
+            toggles,
+            text="Pausar minimizado",
+            variable=self.pause_minimized_var,
+        ).pack(anchor="e")
+        ctk.CTkCheckBox(
+            toggles,
             text="Sempre no topo",
             variable=self.topmost_var,
             command=self._toggle_topmost,
-        ).pack(side="right")
+        ).pack(anchor="e", pady=(6, 0))
 
-        ttk.Checkbutton(
-            header,
-            text="Pausar se minimizado",
-            variable=self.pause_minimized_var,
-        ).pack(side="right", padx=(0, 8))
+        info = ctk.CTkFrame(main, fg_color="#1b1f2b")
+        info.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(info, textvariable=self.next_step_var, font=ctk.CTkFont(size=13), anchor="w").pack(
+            side="left", padx=12, pady=8, fill="x", expand=True
+        )
+        ctk.CTkLabel(info, textvariable=self.target_var, text_color="#8bb8ff", font=ctk.CTkFont(size=13)).pack(
+            side="right", padx=12
+        )
 
-        ttk.Label(header, text="AutoClicker DU", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            header,
-            text="F6 Teste  |  F7 Iniciar/Parar  |  F8 Capturar",
-            style="Subtle.TLabel",
-        ).pack(anchor="w", pady=(2, 0))
+        step1 = ctk.CTkFrame(main, corner_radius=12)
+        step1.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(step1, text="1. Processo Alvo", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
 
-        info_bar = ttk.Frame(main, style="App.TFrame")
-        info_bar.pack(fill="x", pady=(0, 10))
-        ttk.Label(info_bar, textvariable=self.next_step_var, style="Subtle.TLabel").pack(side="left")
-        ttk.Label(info_bar, textvariable=self.target_var, style="Subtle.TLabel").pack(side="right")
+        pick_row = ctk.CTkFrame(step1, fg_color="transparent")
+        pick_row.pack(fill="x", padx=14, pady=(0, 8))
 
-        step1 = ttk.LabelFrame(main, text="1. Alvo", padding=10, style="Card.TLabelframe")
-        step1.pack(fill="x", pady=(0, 8))
-
-        pick_row = ttk.Frame(step1)
-        pick_row.pack(fill="x")
-
-        self.cmb_windows = ttk.Combobox(pick_row, state="readonly")
-        self.cmb_windows.pack(side="left", fill="x", expand=True)
-        self.cmb_windows.bind("<<ComboboxSelected>>", self._on_window_selected)
-
-        self.btn_refresh = ttk.Button(pick_row, text="Atualizar", command=self._refresh_windows, style="Neutral.TButton")
-        self.btn_refresh.pack(side="left", padx=(8, 0))
-
-        self.btn_validate_target = ttk.Button(
+        self.cmb_windows = ctk.CTkComboBox(
             pick_row,
-            text="Validar alvo",
+            variable=self.process_display_var,
+            values=[""],
+            command=lambda _choice: self._on_window_selected(),
+            state="readonly",
+            width=560,
+        )
+        self.cmb_windows.pack(side="left", fill="x", expand=True)
+
+        self.btn_refresh = ctk.CTkButton(pick_row, text="Atualizar", width=110, command=self._refresh_windows)
+        self.btn_refresh.pack(side="left", padx=(8, 0))
+        self.btn_validate_target = ctk.CTkButton(
+            pick_row,
+            text="Validar",
+            width=110,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=self._validate_target,
-            style="Primary.TButton",
         )
         self.btn_validate_target.pack(side="left", padx=(8, 0))
 
-        ttk.Label(
-            step1,
-            text="Fallback por titulo (se o processo tiver mais de uma janela):",
-        ).pack(
-            anchor="w", pady=(8, 0)
-        )
-        self.entry_title = ttk.Entry(step1)
+        ctk.CTkLabel(step1, text="Fallback por titulo", text_color="#8a8f9d").pack(anchor="w", padx=14)
+        self.entry_title = ctk.CTkEntry(step1, placeholder_text="Titulo da janela")
         self.entry_title.insert(0, "Merge Tales")
-        self.entry_title.pack(fill="x", pady=(2, 0))
+        self.entry_title.pack(fill="x", padx=14, pady=(4, 12))
 
-        step2 = ttk.LabelFrame(main, text="2. Ponto e Ritmo", padding=10, style="Card.TLabelframe")
-        step2.pack(fill="x", pady=(0, 8))
+        step2 = ctk.CTkFrame(main, corner_radius=12)
+        step2.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(step2, text="2. Ponto e Ritmo", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
 
-        row = ttk.Frame(step2)
-        row.pack(fill="x")
-
-        ttk.Label(row, text="X:").pack(side="left")
-        self.entry_x = ttk.Entry(row, width=8)
+        row = ctk.CTkFrame(step2, fg_color="transparent")
+        row.pack(fill="x", padx=14)
+        ctk.CTkLabel(row, text="X").pack(side="left")
+        self.entry_x = ctk.CTkEntry(row, width=80)
         self.entry_x.insert(0, "500")
-        self.entry_x.pack(side="left", padx=(4, 12))
-
-        ttk.Label(row, text="Y:").pack(side="left")
-        self.entry_y = ttk.Entry(row, width=8)
+        self.entry_x.pack(side="left", padx=(6, 10))
+        ctk.CTkLabel(row, text="Y").pack(side="left")
+        self.entry_y = ctk.CTkEntry(row, width=80)
         self.entry_y.insert(0, "350")
-        self.entry_y.pack(side="left", padx=(4, 12))
-
-        ttk.Label(row, text="Intervalo (s):").pack(side="left")
-        self.entry_interval = ttk.Entry(row, width=8)
+        self.entry_y.pack(side="left", padx=(6, 10))
+        ctk.CTkLabel(row, text="Intervalo (s)").pack(side="left")
+        self.entry_interval = ctk.CTkEntry(row, width=80)
         self.entry_interval.insert(0, "0.2")
-        self.entry_interval.pack(side="left", padx=(4, 0))
+        self.entry_interval.pack(side="left", padx=(8, 14))
 
-        ttk.Label(row, text="Modo:").pack(side="left", padx=(14, 4))
-        self.cmb_click_mode = ttk.Combobox(
+        self.cmb_click_mode = ctk.CTkComboBox(
             row,
+            variable=self.click_mode_var,
             state="readonly",
-            width=30,
             values=[
                 "Background (PostMessage)",
                 "Compatibilidade jogo (foco + click real)",
             ],
+            command=self._on_click_mode_changed,
+            width=310,
         )
-        self.cmb_click_mode.current(0)
         self.cmb_click_mode.pack(side="left")
-        self.cmb_click_mode.bind("<<ComboboxSelected>>", self._on_click_mode_changed)
 
-        self.chk_force_foreground = ttk.Checkbutton(
+        self.chk_force_foreground = ctk.CTkCheckBox(
             step2,
-            text="Forcar foco da janela alvo no modo compatibilidade",
+            text="Forcar foco no modo compatibilidade",
             variable=self.force_foreground_var,
         )
-        self.chk_force_foreground.pack(anchor="w", pady=(6, 0))
+        self.chk_force_foreground.pack(anchor="w", padx=14, pady=(8, 8))
 
-        point_actions = ttk.Frame(step2)
-        point_actions.pack(fill="x", pady=(8, 0))
-
-        self.btn_capture = ttk.Button(
+        point_actions = ctk.CTkFrame(step2, fg_color="transparent")
+        point_actions.pack(fill="x", padx=14, pady=(0, 12))
+        self.btn_capture = ctk.CTkButton(
             point_actions,
-            text="Capturar ponto (F8)",
+            text="Capturar (F8)",
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=self._capture_point_interactive,
-            style="Primary.TButton",
         )
         self.btn_capture.pack(side="left")
-
-        self.btn_test = ttk.Button(
-            point_actions,
-            text="Testar 1 clique (F6)",
-            command=self._test_single_click,
-            style="Neutral.TButton",
-        )
+        self.btn_test = ctk.CTkButton(point_actions, text="Teste 1 Clique (F6)", command=self._test_single_click)
         self.btn_test.pack(side="left", padx=(8, 0))
-
-        self.btn_capture_and_test = ttk.Button(
-            point_actions,
-            text="Capturar e testar",
-            command=self._capture_and_test,
-            style="Neutral.TButton",
-        )
+        self.btn_capture_and_test = ctk.CTkButton(point_actions, text="Capturar + Testar", command=self._capture_and_test)
         self.btn_capture_and_test.pack(side="left", padx=(8, 0))
 
-        step3 = ttk.LabelFrame(main, text="3. Execucao", padding=10, style="Card.TLabelframe")
-        step3.pack(fill="x", pady=(0, 8))
-
-        run_row = ttk.Frame(step3)
-        run_row.pack(fill="x")
-
-        self.btn_start = ttk.Button(
+        step3 = ctk.CTkFrame(main, corner_radius=12)
+        step3.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(step3, text="3. Execucao", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
+        run_row = ctk.CTkFrame(step3, fg_color="transparent")
+        run_row.pack(fill="x", padx=14, pady=(0, 10))
+        self.btn_start = ctk.CTkButton(
             run_row,
             text="Iniciar (F7)",
+            width=150,
+            fg_color="#0f9d58",
+            hover_color="#0b8248",
             command=self._start,
-            style="Good.TButton",
         )
-        self.btn_start.pack(side="left", padx=(0, 8))
-
-        self.btn_stop = ttk.Button(
+        self.btn_start.pack(side="left")
+        self.btn_stop = ctk.CTkButton(
             run_row,
             text="Parar (F7)",
-            command=self._stop,
+            width=150,
+            fg_color="#e53935",
+            hover_color="#c62828",
             state="disabled",
-            style="Stop.TButton",
+            command=self._stop,
         )
-        self.btn_stop.pack(side="left")
+        self.btn_stop.pack(side="left", padx=(8, 0))
 
-        self.status_var = tk.StringVar(value="Status: parado")
-        self.status_chip = tk.Label(
+        self.status_chip = ctk.CTkLabel(
             step3,
             textvariable=self.status_var,
-            bg="#eef2f7",
-            fg="#334155",
-            font=("Segoe UI", 10, "bold"),
-            padx=10,
-            pady=6,
-            relief="flat",
+            fg_color="#283142",
+            corner_radius=8,
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.status_chip.pack(anchor="w", pady=(10, 0))
+        self.status_chip.pack(anchor="w", padx=14, pady=(0, 10))
+        self.btn_clear_log = ctk.CTkButton(step3, text="Limpar log", width=120, command=self._clear_log)
+        self.btn_clear_log.pack(anchor="w", padx=14, pady=(0, 12))
 
-        self.btn_clear_log = ttk.Button(step3, text="Limpar log", command=self._clear_log, style="Neutral.TButton")
-        self.btn_clear_log.pack(anchor="w", pady=(8, 0))
-
-        log_frame = ttk.LabelFrame(main, text="Atividade", padding=8, style="Card.TLabelframe")
-        log_frame.pack(fill="both", expand=True)
+        log_card = ctk.CTkFrame(main, corner_radius=12)
+        log_card.pack(fill="both", expand=True)
+        ctk.CTkLabel(log_card, text="Atividade", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
         self.log = tk.Text(
-            log_frame,
+            log_card,
             height=12,
-            width=90,
             state="disabled",
-            bg="#fbfcff",
-            fg="#1e293b",
-            insertbackground="#1e293b",
+            bg="#111827",
+            fg="#d1d5db",
+            insertbackground="#d1d5db",
             relief="flat",
-            font=("Consolas", 9),
+            font=("Consolas", 10),
         )
-        self.log.pack(fill="both", expand=True)
+        self.log.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
-        self._append_log("Fluxo rapido: escolher processo -> validar alvo -> capturar e testar -> iniciar.")
-        self._append_log(
-            "Se nao clicar em jogos, troque para: Modo = Compatibilidade jogo (foco + click real)."
-        )
+        self._append_log("Fluxo: escolher processo -> validar -> capturar/testar -> iniciar")
+        self._append_log("Para jogos, use modo compatibilidade.")
         self._toggle_topmost()
         self._update_action_availability()
-        self._on_click_mode_changed()
+        self._on_click_mode_changed(self.click_mode_var.get())
 
     def _bind_shortcuts(self):
         self.root.bind("<F6>", lambda _e: self._test_single_click())
@@ -549,21 +508,19 @@ class App:
         self.root.bind("<F8>", lambda _e: self._capture_point_interactive())
 
     def _get_click_mode(self):
-        if self.cmb_click_mode.current() == 1:
+        if self.click_mode_var.get() == "Compatibilidade jogo (foco + click real)":
             return CLICK_MODE_COMPAT
         return CLICK_MODE_BACKGROUND
 
-    def _on_click_mode_changed(self, _event=None):
+    def _on_click_mode_changed(self, _choice=None):
         mode = self._get_click_mode()
-        self.click_mode_var.set(mode)
-
         if mode == CLICK_MODE_COMPAT:
-            self.chk_force_foreground.config(state="normal")
-            self._append_log("Modo de clique: Compatibilidade jogo.")
+            self.chk_force_foreground.configure(state="normal")
+            self._append_log("Modo: Compatibilidade jogo.")
             self._set_next_step("teste 1 clique em modo compatibilidade.")
         else:
-            self.chk_force_foreground.config(state="disabled")
-            self._append_log("Modo de clique: Background (PostMessage).")
+            self.chk_force_foreground.configure(state="disabled")
+            self._append_log("Modo: Background (PostMessage).")
 
     def _append_log(self, text: str):
         self.root.after(0, self._append_log_ui, text)
@@ -580,11 +537,11 @@ class App:
     def _set_buttons_state(self, running: bool):
         self.status_var.set(f"Status: {'rodando' if running else 'parado'}")
         if running:
-            self.status_chip.config(bg="#dcfce7", fg="#166534")
+            self.status_chip.configure(fg_color="#166534")
         else:
-            self.status_chip.config(bg="#eef2f7", fg="#334155")
-        self.btn_start.config(state="disabled" if running else "normal")
-        self.btn_stop.config(state="normal" if running else "disabled")
+            self.status_chip.configure(fg_color="#283142")
+        self.btn_start.configure(state="disabled" if running else "normal")
+        self.btn_stop.configure(state="normal" if running else "disabled")
         self._update_action_availability()
 
     def _update_action_availability(self):
@@ -600,11 +557,11 @@ class App:
         action_state = "disabled" if running or not has_target else "normal"
         start_state = "disabled" if running or not has_target else "normal"
 
-        self.btn_capture.config(state=capture_state)
-        self.btn_test.config(state=action_state)
-        self.btn_capture_and_test.config(state=action_state if not self._capturing else "disabled")
-        self.btn_validate_target.config(state="disabled" if running else "normal")
-        self.btn_start.config(state=start_state)
+        self.btn_capture.configure(state=capture_state)
+        self.btn_test.configure(state=action_state)
+        self.btn_capture_and_test.configure(state=action_state if not self._capturing else "disabled")
+        self.btn_validate_target.configure(state="disabled" if running else "normal")
+        self.btn_start.configure(state=start_state)
 
     def _set_next_step(self, text: str):
         self.next_step_var.set(f"Passo atual: {text}")
@@ -627,7 +584,6 @@ class App:
     def _refresh_windows(self):
         previous_pid = self.selected_pid
         windows = list_selectable_windows()
-
         by_pid = {}
         for w in windows:
             pid = w["pid"]
@@ -641,14 +597,14 @@ class App:
                 }
 
         self.process_options = sorted(by_pid.values(), key=lambda p: p["display"].lower())
-        values = [p["display"] for p in self.process_options]
-        self.cmb_windows["values"] = values
+        values = [p["display"] for p in self.process_options] or [""]
+        self.cmb_windows.configure(values=values)
 
         if not self.process_options:
             self.selected_pid = 0
             self.selected_hwnd = 0
-            self.cmb_windows.set("")
-            self._append_log("Nenhum processo com janela selecionavel encontrado no momento.")
+            self.process_display_var.set("")
+            self._append_log("Nenhum processo com janela selecionavel encontrado.")
             self.target_var.set("Alvo: nenhum")
             self._set_next_step("abra o jogo/app e clique em Atualizar.")
             self._update_action_availability()
@@ -666,35 +622,37 @@ class App:
                     idx_to_select = idx
                     break
 
-        self.cmb_windows.current(idx_to_select)
-        self._on_window_selected()
         selected = self.process_options[idx_to_select]
+        self.process_display_var.set(selected["display"])
+        self._on_window_selected()
         self._append_log(
             f"Lista atualizada: {len(self.process_options)} processo(s). Alvo automatico: {selected['process']} (PID {selected['pid']})"
         )
         self._update_action_availability()
 
     def _on_window_selected(self, _event=None):
-        idx = self.cmb_windows.current()
-        if idx < 0 or idx >= len(self.process_options):
+        selected_display = self.process_display_var.get().strip()
+        selected = None
+        for opt in self.process_options:
+            if opt["display"] == selected_display:
+                selected = opt
+                break
+        if not selected:
             self.selected_pid = 0
             self.selected_hwnd = 0
             self.target_var.set("Alvo: nenhum")
             self._update_action_availability()
             return
 
-        selected = self.process_options[idx]
         self.selected_pid = selected["pid"]
         self.selected_hwnd = selected["hwnd"]
         self.target_var.set(f"Alvo: {selected['process']} [PID {selected['pid']}]")
-
         self.entry_title.delete(0, "end")
         self.entry_title.insert(0, selected["title"])
-
         self._append_log(
             f"Selecionado processo: {selected['process']} | PID {selected['pid']} (janela atual: {selected['title']})"
         )
-        self._set_next_step("capture o ponto de clique e teste 1 vez.")
+        self._set_next_step("capture o ponto e teste 1 vez.")
         self._update_action_availability()
 
     def _resolve_target_window(self):
@@ -702,10 +660,8 @@ class App:
             hwnd, title = find_window_by_pid(self.selected_pid)
             if hwnd:
                 return hwnd, title
-
         if self.selected_hwnd and win32gui.IsWindow(self.selected_hwnd):
             return self.selected_hwnd, win32gui.GetWindowText(self.selected_hwnd)
-
         title = self.entry_title.get().strip()
         return find_window_by_title(title)
 
@@ -713,7 +669,6 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
-
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -722,7 +677,6 @@ class App:
         if target_hwnd == 0 and not title:
             messagebox.showerror("Erro", "Selecione uma janela ou informe um titulo.")
             return
-
         if target_hwnd == 0:
             messagebox.showerror("Erro", "Nao encontrei a janela alvo para iniciar.")
             return
@@ -740,22 +694,19 @@ class App:
             self._get_click_mode(),
             bool(self.force_foreground_var.get()),
         )
-        self._append_log(
-            f"Travado em HWND={target_hwnd}, PID={target_pid}, titulo='{target_title}'."
-        )
+        self._append_log(f"Travado em HWND={target_hwnd}, PID={target_pid}, titulo='{target_title}'.")
         self.clicker.start()
         self._set_next_step("autoclick em execucao. Use F7 para parar.")
         self._update_action_availability()
 
     def _stop(self):
         self.clicker.stop()
-        self._set_next_step("ajuste o ponto ou intervalo, depois inicie novamente.")
+        self._set_next_step("ajuste o ponto/intervalo e reinicie.")
         self._update_action_availability()
 
     def _capture_point_interactive(self):
         if self._capturing:
             return
-
         target_hwnd, target_title = self._resolve_target_window()
         if target_hwnd == 0:
             messagebox.showerror("Erro", "Selecione uma janela valida antes de capturar o ponto.")
@@ -763,9 +714,8 @@ class App:
 
         self._capturing = True
         self._update_action_availability()
-
-        self._append_log(f"Captura interativa iniciada para: {target_title}")
-        self._append_log("Clique com o botao esquerdo no ponto desejado dentro da janela do jogo.")
+        self._append_log(f"Captura iniciada para: {target_title}")
+        self._append_log("Clique no ponto desejado dentro da janela do jogo.")
         self._set_next_step("clique no ponto dentro do jogo para salvar X/Y.")
 
         try:
@@ -774,11 +724,7 @@ class App:
         except Exception:
             self._append_log("Nao foi possivel trazer a janela para frente. Continue mesmo assim.")
 
-        thread = threading.Thread(
-            target=self._capture_click_worker,
-            args=(target_hwnd,),
-            daemon=True,
-        )
+        thread = threading.Thread(target=self._capture_click_worker, args=(target_hwnd,), daemon=True)
         thread.start()
 
     def _read_form_values(self):
@@ -796,7 +742,6 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
-
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -822,9 +767,7 @@ class App:
             )
             self.clicker._send_click(target_hwnd, x, y)
             mode_text = "compatibilidade" if self._get_click_mode() == CLICK_MODE_COMPAT else "background"
-            self._append_log(
-                f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y} (modo: {mode_text})."
-            )
+            self._append_log(f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y} (modo: {mode_text}).")
             self._set_next_step("se o clique funcionou, inicie o autoclick.")
         except Exception as exc:
             messagebox.showerror("Erro", f"Falha no teste de clique: {exc}")
@@ -837,9 +780,8 @@ class App:
         target_hwnd, target_title = self._resolve_target_window()
         if target_hwnd == 0:
             messagebox.showerror("Erro", "Nao encontrei a janela alvo.")
-            self._set_next_step("corrija a selecao da janela e valide novamente.")
+            self._set_next_step("corrija a selecao e valide novamente.")
             return
-
         self.selected_hwnd = target_hwnd
         _, pid = win32process.GetWindowThreadProcessId(target_hwnd)
         self.target_var.set(f"Alvo: {target_title} [PID {pid}]")
@@ -852,25 +794,19 @@ class App:
             timeout_seconds = 20
             deadline = time.time() + timeout_seconds
             was_down = bool(win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000)
-
             while time.time() < deadline:
                 is_down = bool(win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000)
-
                 if is_down and not was_down:
                     pos = win32api.GetCursorPos()
                     clicked_hwnd = win32gui.WindowFromPoint(pos)
                     inside = clicked_hwnd == target_hwnd or win32gui.IsChild(target_hwnd, clicked_hwnd)
-
                     if inside:
                         client_x, client_y = win32gui.ScreenToClient(target_hwnd, pos)
                         self.root.after(0, self._finish_capture, True, client_x, client_y, "")
                         return
-
                     self._append_log("Clique fora da janela alvo. Tente de novo (aguardando...).")
-
                 was_down = is_down
                 time.sleep(0.01)
-
             self.root.after(0, self._finish_capture, False, 0, 0, "Tempo esgotado para captura.")
         except Exception as exc:
             self.root.after(0, self._finish_capture, False, 0, 0, f"Falha na captura: {exc}")
@@ -878,7 +814,6 @@ class App:
     def _finish_capture(self, ok: bool, x: int, y: int, error: str):
         self._capturing = False
         self._update_action_availability()
-
         if not ok:
             self._append_log(error)
             messagebox.showerror("Erro", error)
@@ -892,7 +827,6 @@ class App:
         self.entry_y.insert(0, str(y))
         self._append_log(f"Ponto capturado com sucesso: X={x}, Y={y}")
         self._set_next_step("teste 1 clique e, se ok, inicie o autoclick.")
-
         if self._test_after_capture:
             self._test_after_capture = False
             self._test_single_click()
@@ -901,10 +835,10 @@ class App:
         self.clicker.shutdown()
         self.root.destroy()
 
-
 def main():
-    root = tk.Tk()
-    ttk.Style().theme_use("clam")
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+    root = ctk.CTk()
     app = App(root)
     root.mainloop()
 
