@@ -99,6 +99,26 @@ def find_window_by_title(title_part: str):
     return matches[0]
 
 
+def find_window_by_pid(target_pid: int):
+    if not target_pid:
+        return 0, ""
+
+    matches = []
+
+    def enum_cb(hwnd, _):
+        if not _is_taskbar_like_window(hwnd):
+            return
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pid == target_pid:
+            title = win32gui.GetWindowText(hwnd) or f"hwnd={hwnd}"
+            matches.append((hwnd, title))
+
+    win32gui.EnumWindows(enum_cb, None)
+    if not matches:
+        return 0, ""
+    return matches[0]
+
+
 class WindowClicker:
     def __init__(self):
         self._running = False
@@ -276,15 +296,16 @@ class App:
         self.clicker.on_log = self._append_log
         self.clicker.on_state_change = self._on_state_change
 
-        self.window_options = []
+        self.process_options = []
         self.selected_hwnd = 0
+        self.selected_pid = 0
         self._capturing = False
         self._test_after_capture = False
         self.topmost_var = tk.BooleanVar(value=True)
         self.pause_minimized_var = tk.BooleanVar(value=False)
         self.force_foreground_var = tk.BooleanVar(value=True)
         self.click_mode_var = tk.StringVar(value=CLICK_MODE_BACKGROUND)
-        self.next_step_var = tk.StringVar(value="Passo atual: selecione a janela alvo.")
+        self.next_step_var = tk.StringVar(value="Passo atual: selecione o processo alvo.")
         self.target_var = tk.StringVar(value="Alvo: nenhum")
 
         self._build_ui()
@@ -320,7 +341,7 @@ class App:
         ttk.Label(main, textvariable=self.next_step_var).pack(anchor="w", pady=(2, 6))
         ttk.Label(main, textvariable=self.target_var).pack(anchor="w", pady=(0, 8))
 
-        step1 = ttk.LabelFrame(main, text="Passo 1: Escolher janela alvo", padding=8)
+        step1 = ttk.LabelFrame(main, text="Passo 1: Escolher processo alvo", padding=8)
         step1.pack(fill="x", pady=(0, 8))
 
         pick_row = ttk.Frame(step1)
@@ -340,7 +361,10 @@ class App:
         )
         self.btn_validate_target.pack(side="left", padx=(8, 0))
 
-        ttk.Label(step1, text="Fallback por titulo (se a lista nao achar o app):").pack(
+        ttk.Label(
+            step1,
+            text="Fallback por titulo (se o processo tiver mais de uma janela):",
+        ).pack(
             anchor="w", pady=(8, 0)
         )
         self.entry_title = ttk.Entry(step1)
@@ -432,7 +456,7 @@ class App:
         self.log = tk.Text(main, height=12, width=90, state="disabled")
         self.log.pack(fill="both", expand=True)
 
-        self._append_log("Fluxo rapido: validar alvo -> capturar e testar -> iniciar.")
+        self._append_log("Fluxo rapido: escolher processo -> validar alvo -> capturar e testar -> iniciar.")
         self._append_log(
             "Se nao clicar em jogos, troque para: Modo = Compatibilidade jogo (foco + click real)."
         )
@@ -518,62 +542,84 @@ class App:
         self.root.attributes("-topmost", bool(self.topmost_var.get()))
 
     def _refresh_windows(self):
-        previous_hwnd = self.selected_hwnd
-        self.window_options = list_selectable_windows()
-        values = [w["display"] for w in self.window_options]
+        previous_pid = self.selected_pid
+        windows = list_selectable_windows()
+
+        by_pid = {}
+        for w in windows:
+            pid = w["pid"]
+            if pid not in by_pid:
+                by_pid[pid] = {
+                    "pid": pid,
+                    "process": w["process"],
+                    "title": w["title"],
+                    "hwnd": w["hwnd"],
+                    "display": f"{w['process']} | PID {pid} | Janela: {w['title']}",
+                }
+
+        self.process_options = sorted(by_pid.values(), key=lambda p: p["display"].lower())
+        values = [p["display"] for p in self.process_options]
         self.cmb_windows["values"] = values
 
-        if not self.window_options:
+        if not self.process_options:
+            self.selected_pid = 0
             self.selected_hwnd = 0
             self.cmb_windows.set("")
-            self._append_log("Nenhuma janela selecionavel encontrada no momento.")
+            self._append_log("Nenhum processo com janela selecionavel encontrado no momento.")
             self.target_var.set("Alvo: nenhum")
             self._set_next_step("abra o jogo/app e clique em Atualizar.")
             self._update_action_availability()
             return
 
         idx_to_select = 0
-        if previous_hwnd:
-            for idx, opt in enumerate(self.window_options):
-                if opt["hwnd"] == previous_hwnd:
+        if previous_pid:
+            for idx, opt in enumerate(self.process_options):
+                if opt["pid"] == previous_pid:
                     idx_to_select = idx
                     break
         else:
-            for idx, opt in enumerate(self.window_options):
-                if AUTO_TARGET_HINT in opt["title"].lower():
+            for idx, opt in enumerate(self.process_options):
+                if AUTO_TARGET_HINT in opt["title"].lower() or AUTO_TARGET_HINT in opt["process"].lower():
                     idx_to_select = idx
                     break
 
         self.cmb_windows.current(idx_to_select)
         self._on_window_selected()
-        selected = self.window_options[idx_to_select]
+        selected = self.process_options[idx_to_select]
         self._append_log(
-            f"Lista atualizada: {len(self.window_options)} janela(s). Alvo automatico: {selected['title']}"
+            f"Lista atualizada: {len(self.process_options)} processo(s). Alvo automatico: {selected['process']} (PID {selected['pid']})"
         )
         self._update_action_availability()
 
     def _on_window_selected(self, _event=None):
         idx = self.cmb_windows.current()
-        if idx < 0 or idx >= len(self.window_options):
+        if idx < 0 or idx >= len(self.process_options):
+            self.selected_pid = 0
             self.selected_hwnd = 0
             self.target_var.set("Alvo: nenhum")
             self._update_action_availability()
             return
 
-        selected = self.window_options[idx]
+        selected = self.process_options[idx]
+        self.selected_pid = selected["pid"]
         self.selected_hwnd = selected["hwnd"]
-        self.target_var.set(f"Alvo: {selected['title']} [{selected['process']}]")
+        self.target_var.set(f"Alvo: {selected['process']} [PID {selected['pid']}]")
 
         self.entry_title.delete(0, "end")
         self.entry_title.insert(0, selected["title"])
 
         self._append_log(
-            f"Selecionado: {selected['title']} ({selected['process']} | PID {selected['pid']})"
+            f"Selecionado processo: {selected['process']} | PID {selected['pid']} (janela atual: {selected['title']})"
         )
         self._set_next_step("capture o ponto de clique e teste 1 vez.")
         self._update_action_availability()
 
     def _resolve_target_window(self):
+        if self.selected_pid:
+            hwnd, title = find_window_by_pid(self.selected_pid)
+            if hwnd:
+                return hwnd, title
+
         if self.selected_hwnd and win32gui.IsWindow(self.selected_hwnd):
             return self.selected_hwnd, win32gui.GetWindowText(self.selected_hwnd)
 
