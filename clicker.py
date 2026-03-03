@@ -289,8 +289,9 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("AutoClicker de Janela")
-        self.root.geometry("820x640")
+        self.root.geometry("940x700")
         self.root.resizable(False, False)
+        self.root.configure(bg="#f3f6fb")
 
         self.clicker = WindowClicker()
         self.clicker.on_log = self._append_log
@@ -308,40 +309,79 @@ class App:
         self.next_step_var = tk.StringVar(value="Passo atual: selecione o processo alvo.")
         self.target_var = tk.StringVar(value="Alvo: nenhum")
 
+        self._configure_styles()
         self._build_ui()
         self._refresh_windows()
         self._bind_shortcuts()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _configure_styles(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        style.configure("App.TFrame", background="#f3f6fb")
+        style.configure(
+            "Card.TLabelframe",
+            background="#ffffff",
+            bordercolor="#d6deeb",
+            relief="solid",
+            borderwidth=1,
+        )
+        style.configure(
+            "Card.TLabelframe.Label",
+            background="#ffffff",
+            foreground="#243041",
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.configure("Title.TLabel", background="#f3f6fb", foreground="#1f2937", font=("Segoe UI", 16, "bold"))
+        style.configure("Subtle.TLabel", background="#f3f6fb", foreground="#5b6473", font=("Segoe UI", 9))
+        style.configure("Body.TLabel", background="#ffffff", foreground="#334155", font=("Segoe UI", 9))
+
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#2563eb")
+        style.map("Primary.TButton", background=[("active", "#1d4ed8"), ("disabled", "#9fb9f4")], foreground=[("disabled", "#eef4ff")])
+        style.configure("Neutral.TButton", font=("Segoe UI", 10), padding=(10, 8), background="#e8eef9", foreground="#1e2a3a")
+        style.map("Neutral.TButton", background=[("active", "#dce6f7"), ("disabled", "#f2f4f8")], foreground=[("disabled", "#91a0b8")])
+        style.configure("Good.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#0f9d58")
+        style.map("Good.TButton", background=[("active", "#0b8248"), ("disabled", "#96d8b8")], foreground=[("disabled", "#effaf4")])
+        style.configure("Stop.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8), foreground="#ffffff", background="#e53935")
+        style.map("Stop.TButton", background=[("active", "#c62828"), ("disabled", "#efabab")], foreground=[("disabled", "#fff2f2")])
+
+        style.configure("TEntry", padding=5)
+        style.configure("TCombobox", padding=5)
+
     def _build_ui(self):
-        main = ttk.Frame(self.root, padding=12)
+        main = ttk.Frame(self.root, padding=16, style="App.TFrame")
         main.pack(fill="both", expand=True)
 
-        top_row = ttk.Frame(main)
-        top_row.pack(fill="x", pady=(0, 8))
+        header = ttk.Frame(main, style="App.TFrame")
+        header.pack(fill="x", pady=(0, 12))
 
         ttk.Checkbutton(
-            top_row,
+            header,
             text="Sempre no topo",
             variable=self.topmost_var,
             command=self._toggle_topmost,
-        ).pack(side="left")
+        ).pack(side="right")
 
         ttk.Checkbutton(
-            top_row,
+            header,
             text="Pausar se minimizado",
             variable=self.pause_minimized_var,
-        ).pack(side="left", padx=(8, 0))
+        ).pack(side="right", padx=(0, 8))
 
+        ttk.Label(header, text="AutoClicker DU", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
-            top_row,
-            text="Atalhos: F6=Testar clique | F7=Iniciar/Parar | F8=Capturar ponto",
-        ).pack(side="left", padx=(16, 0))
+            header,
+            text="F6 Teste  |  F7 Iniciar/Parar  |  F8 Capturar",
+            style="Subtle.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
 
-        ttk.Label(main, textvariable=self.next_step_var).pack(anchor="w", pady=(2, 6))
-        ttk.Label(main, textvariable=self.target_var).pack(anchor="w", pady=(0, 8))
+        info_bar = ttk.Frame(main, style="App.TFrame")
+        info_bar.pack(fill="x", pady=(0, 10))
+        ttk.Label(info_bar, textvariable=self.next_step_var, style="Subtle.TLabel").pack(side="left")
+        ttk.Label(info_bar, textvariable=self.target_var, style="Subtle.TLabel").pack(side="right")
 
-        step1 = ttk.LabelFrame(main, text="Passo 1: Escolher processo alvo", padding=8)
+        step1 = ttk.LabelFrame(main, text="1. Alvo", padding=10, style="Card.TLabelframe")
         step1.pack(fill="x", pady=(0, 8))
 
         pick_row = ttk.Frame(step1)
@@ -351,13 +391,14 @@ class App:
         self.cmb_windows.pack(side="left", fill="x", expand=True)
         self.cmb_windows.bind("<<ComboboxSelected>>", self._on_window_selected)
 
-        self.btn_refresh = ttk.Button(pick_row, text="Atualizar", command=self._refresh_windows)
+        self.btn_refresh = ttk.Button(pick_row, text="Atualizar", command=self._refresh_windows, style="Neutral.TButton")
         self.btn_refresh.pack(side="left", padx=(8, 0))
 
         self.btn_validate_target = ttk.Button(
             pick_row,
             text="Validar alvo",
             command=self._validate_target,
+            style="Primary.TButton",
         )
         self.btn_validate_target.pack(side="left", padx=(8, 0))
 
@@ -371,7 +412,7 @@ class App:
         self.entry_title.insert(0, "Merge Tales")
         self.entry_title.pack(fill="x", pady=(2, 0))
 
-        step2 = ttk.LabelFrame(main, text="Passo 2: Definir ponto e intervalo", padding=8)
+        step2 = ttk.LabelFrame(main, text="2. Ponto e Ritmo", padding=10, style="Card.TLabelframe")
         step2.pack(fill="x", pady=(0, 8))
 
         row = ttk.Frame(step2)
@@ -420,40 +461,78 @@ class App:
             point_actions,
             text="Capturar ponto (F8)",
             command=self._capture_point_interactive,
+            style="Primary.TButton",
         )
         self.btn_capture.pack(side="left")
 
-        self.btn_test = ttk.Button(point_actions, text="Testar 1 clique (F6)", command=self._test_single_click)
+        self.btn_test = ttk.Button(
+            point_actions,
+            text="Testar 1 clique (F6)",
+            command=self._test_single_click,
+            style="Neutral.TButton",
+        )
         self.btn_test.pack(side="left", padx=(8, 0))
 
         self.btn_capture_and_test = ttk.Button(
             point_actions,
             text="Capturar e testar",
             command=self._capture_and_test,
+            style="Neutral.TButton",
         )
         self.btn_capture_and_test.pack(side="left", padx=(8, 0))
 
-        step3 = ttk.LabelFrame(main, text="Passo 3: Execucao", padding=8)
+        step3 = ttk.LabelFrame(main, text="3. Execucao", padding=10, style="Card.TLabelframe")
         step3.pack(fill="x", pady=(0, 8))
 
         run_row = ttk.Frame(step3)
         run_row.pack(fill="x")
 
-        self.btn_start = ttk.Button(run_row, text="Iniciar autoclick (F7)", command=self._start)
+        self.btn_start = ttk.Button(
+            run_row,
+            text="Iniciar (F7)",
+            command=self._start,
+            style="Good.TButton",
+        )
         self.btn_start.pack(side="left", padx=(0, 8))
 
-        self.btn_stop = ttk.Button(run_row, text="Parar (F7)", command=self._stop, state="disabled")
+        self.btn_stop = ttk.Button(
+            run_row,
+            text="Parar (F7)",
+            command=self._stop,
+            state="disabled",
+            style="Stop.TButton",
+        )
         self.btn_stop.pack(side="left")
 
         self.status_var = tk.StringVar(value="Status: parado")
-        self.status_lbl = ttk.Label(step3, textvariable=self.status_var)
-        self.status_lbl.pack(anchor="w", pady=(8, 0))
+        self.status_chip = tk.Label(
+            step3,
+            textvariable=self.status_var,
+            bg="#eef2f7",
+            fg="#334155",
+            font=("Segoe UI", 10, "bold"),
+            padx=10,
+            pady=6,
+            relief="flat",
+        )
+        self.status_chip.pack(anchor="w", pady=(10, 0))
 
-        self.btn_clear_log = ttk.Button(step3, text="Limpar log", command=self._clear_log)
+        self.btn_clear_log = ttk.Button(step3, text="Limpar log", command=self._clear_log, style="Neutral.TButton")
         self.btn_clear_log.pack(anchor="w", pady=(8, 0))
 
-        ttk.Label(main, text="Log:").pack(anchor="w")
-        self.log = tk.Text(main, height=12, width=90, state="disabled")
+        log_frame = ttk.LabelFrame(main, text="Atividade", padding=8, style="Card.TLabelframe")
+        log_frame.pack(fill="both", expand=True)
+        self.log = tk.Text(
+            log_frame,
+            height=12,
+            width=90,
+            state="disabled",
+            bg="#fbfcff",
+            fg="#1e293b",
+            insertbackground="#1e293b",
+            relief="flat",
+            font=("Consolas", 9),
+        )
         self.log.pack(fill="both", expand=True)
 
         self._append_log("Fluxo rapido: escolher processo -> validar alvo -> capturar e testar -> iniciar.")
@@ -500,6 +579,10 @@ class App:
 
     def _set_buttons_state(self, running: bool):
         self.status_var.set(f"Status: {'rodando' if running else 'parado'}")
+        if running:
+            self.status_chip.config(bg="#dcfce7", fg="#166534")
+        else:
+            self.status_chip.config(bg="#eef2f7", fg="#334155")
         self.btn_start.config(state="disabled" if running else "normal")
         self.btn_stop.config(state="normal" if running else "disabled")
         self._update_action_availability()
