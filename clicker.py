@@ -16,6 +16,8 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 AUTO_TARGET_HINT = "merge tales"
 CLICK_MODE_BACKGROUND = "background_postmessage"
 CLICK_MODE_COMPAT = "compat_sendinput"
+CLICK_MODE_LABEL_BG = "Background seguro"
+CLICK_MODE_LABEL_COMPAT = "Compatibilidade (usa mouse real)"
 
 
 def get_process_name(pid: int) -> str:
@@ -209,26 +211,31 @@ class WindowClicker:
 
         return self.target_hwnd, title
 
-    def _resolve_click_receiver(self, root_hwnd: int, x: int, y: int):
-        screen_point = win32gui.ClientToScreen(root_hwnd, (x, y))
-        receiver_hwnd = root_hwnd
-
-        try:
-            hit_hwnd = win32gui.WindowFromPoint(screen_point)
-            if hit_hwnd and (hit_hwnd == root_hwnd or win32gui.IsChild(root_hwnd, hit_hwnd)):
-                receiver_hwnd = hit_hwnd
-        except Exception:
-            receiver_hwnd = root_hwnd
-
-        local_x, local_y = win32gui.ScreenToClient(receiver_hwnd, screen_point)
-        return receiver_hwnd, local_x, local_y
+    def _post_click_messages(self, hwnd: int, x: int, y: int):
+        lparam = win32api.MAKELONG(x, y)
+        win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lparam)
+        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
+        win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lparam)
 
     def _send_click_background(self, hwnd: int, x: int, y: int):
-        receiver_hwnd, local_x, local_y = self._resolve_click_receiver(hwnd, x, y)
-        lparam = win32api.MAKELONG(local_x, local_y)
-        win32gui.PostMessage(receiver_hwnd, win32con.WM_MOUSEMOVE, 0, lparam)
-        win32gui.PostMessage(receiver_hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
-        win32gui.PostMessage(receiver_hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+        # Modo background: nunca usa cursor real do usuario.
+        self._post_click_messages(hwnd, x, y)
+
+        # Tenta tambem a subjanela sob o ponto para melhorar apps com client area separada.
+        if win32gui.IsIconic(hwnd):
+            return
+        try:
+            child = win32gui.ChildWindowFromPointEx(
+                hwnd,
+                (x, y),
+                win32con.CWP_SKIPDISABLED | win32con.CWP_SKIPINVISIBLE,
+            )
+            if child and child != hwnd:
+                sx, sy = win32gui.ClientToScreen(hwnd, (x, y))
+                cx, cy = win32gui.ScreenToClient(child, (sx, sy))
+                self._post_click_messages(child, cx, cy)
+        except Exception:
+            pass
 
     def _send_click_compat(self, hwnd: int, x: int, y: int):
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
@@ -290,7 +297,7 @@ class App:
     def __init__(self, root: ctk.CTk):
         self.root = root
         self.root.title("AutoClicker DU")
-        self.root.geometry("980x740")
+        self.root.geometry("1020x760")
         self.root.resizable(False, False)
 
         self.clicker = WindowClicker()
@@ -302,13 +309,14 @@ class App:
         self.selected_pid = 0
         self._capturing = False
         self._test_after_capture = False
+        self._compat_confirmed = False
 
         self.topmost_var = tk.BooleanVar(value=True)
         self.pause_minimized_var = tk.BooleanVar(value=False)
         self.force_foreground_var = tk.BooleanVar(value=True)
-        self.click_mode_var = tk.StringVar(value="Background (PostMessage)")
+        self.click_mode_var = tk.StringVar(value=CLICK_MODE_LABEL_BG)
         self.process_display_var = tk.StringVar(value="")
-        self.next_step_var = tk.StringVar(value="Passo atual: selecione o processo alvo.")
+        self.next_step_var = tk.StringVar(value="Selecione o processo alvo")
         self.target_var = tk.StringVar(value="Alvo: nenhum")
         self.status_var = tk.StringVar(value="Status: parado")
 
@@ -329,7 +337,7 @@ class App:
         ctk.CTkLabel(title_block, text="AutoClicker DU", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w")
         ctk.CTkLabel(
             title_block,
-            text="F6 Teste  |  F7 Iniciar/Parar  |  F8 Capturar",
+            text="Background seguro para trabalhar enquanto roda",
             text_color="#8a8f9d",
             font=ctk.CTkFont(size=13),
         ).pack(anchor="w", pady=(2, 0))
@@ -348,18 +356,18 @@ class App:
             command=self._toggle_topmost,
         ).pack(anchor="e", pady=(6, 0))
 
-        info = ctk.CTkFrame(main, fg_color="#1b1f2b")
+        info = ctk.CTkFrame(main, fg_color="#1b1f2b", corner_radius=10)
         info.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(info, textvariable=self.next_step_var, font=ctk.CTkFont(size=13), anchor="w").pack(
+        ctk.CTkLabel(info, textvariable=self.next_step_var, font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(
             side="left", padx=12, pady=8, fill="x", expand=True
         )
         ctk.CTkLabel(info, textvariable=self.target_var, text_color="#8bb8ff", font=ctk.CTkFont(size=13)).pack(
             side="right", padx=12
         )
 
-        step1 = ctk.CTkFrame(main, corner_radius=12)
+        step1 = ctk.CTkFrame(main, corner_radius=14)
         step1.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(step1, text="1. Processo Alvo", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
+        ctk.CTkLabel(step1, text="Alvo", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
 
         pick_row = ctk.CTkFrame(step1, fg_color="transparent")
         pick_row.pack(fill="x", padx=14, pady=(0, 8))
@@ -379,21 +387,22 @@ class App:
         self.btn_validate_target = ctk.CTkButton(
             pick_row,
             text="Validar",
-            width=110,
+            width=120,
+            height=36,
             fg_color="#2563eb",
             hover_color="#1d4ed8",
             command=self._validate_target,
         )
         self.btn_validate_target.pack(side="left", padx=(8, 0))
 
-        ctk.CTkLabel(step1, text="Fallback por titulo", text_color="#8a8f9d").pack(anchor="w", padx=14)
+        ctk.CTkLabel(step1, text="Fallback", text_color="#8a8f9d").pack(anchor="w", padx=14)
         self.entry_title = ctk.CTkEntry(step1, placeholder_text="Titulo da janela")
         self.entry_title.insert(0, "Merge Tales")
         self.entry_title.pack(fill="x", padx=14, pady=(4, 12))
 
-        step2 = ctk.CTkFrame(main, corner_radius=12)
+        step2 = ctk.CTkFrame(main, corner_radius=14)
         step2.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(step2, text="2. Ponto e Ritmo", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
+        ctk.CTkLabel(step2, text="Clique", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
 
         row = ctk.CTkFrame(step2, fg_color="transparent")
         row.pack(fill="x", padx=14)
@@ -415,8 +424,8 @@ class App:
             variable=self.click_mode_var,
             state="readonly",
             values=[
-                "Background (PostMessage)",
-                "Compatibilidade jogo (foco + click real)",
+                CLICK_MODE_LABEL_BG,
+                CLICK_MODE_LABEL_COMPAT,
             ],
             command=self._on_click_mode_changed,
             width=310,
@@ -435,25 +444,40 @@ class App:
         self.btn_capture = ctk.CTkButton(
             point_actions,
             text="Capturar (F8)",
+            width=180,
+            height=44,
             fg_color="#2563eb",
             hover_color="#1d4ed8",
             command=self._capture_point_interactive,
         )
         self.btn_capture.pack(side="left")
-        self.btn_test = ctk.CTkButton(point_actions, text="Teste 1 Clique (F6)", command=self._test_single_click)
+        self.btn_test = ctk.CTkButton(
+            point_actions,
+            text="Teste 1 Clique (F6)",
+            width=180,
+            height=44,
+            command=self._test_single_click,
+        )
         self.btn_test.pack(side="left", padx=(8, 0))
-        self.btn_capture_and_test = ctk.CTkButton(point_actions, text="Capturar + Testar", command=self._capture_and_test)
+        self.btn_capture_and_test = ctk.CTkButton(
+            point_actions,
+            text="Capturar + Testar",
+            width=180,
+            height=44,
+            command=self._capture_and_test,
+        )
         self.btn_capture_and_test.pack(side="left", padx=(8, 0))
 
-        step3 = ctk.CTkFrame(main, corner_radius=12)
+        step3 = ctk.CTkFrame(main, corner_radius=14)
         step3.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(step3, text="3. Execucao", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
+        ctk.CTkLabel(step3, text="Executar", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
         run_row = ctk.CTkFrame(step3, fg_color="transparent")
         run_row.pack(fill="x", padx=14, pady=(0, 10))
         self.btn_start = ctk.CTkButton(
             run_row,
             text="Iniciar (F7)",
-            width=150,
+            width=220,
+            height=48,
             fg_color="#0f9d58",
             hover_color="#0b8248",
             command=self._start,
@@ -462,7 +486,8 @@ class App:
         self.btn_stop = ctk.CTkButton(
             run_row,
             text="Parar (F7)",
-            width=150,
+            width=220,
+            height=48,
             fg_color="#e53935",
             hover_color="#c62828",
             state="disabled",
@@ -481,9 +506,9 @@ class App:
         self.btn_clear_log = ctk.CTkButton(step3, text="Limpar log", width=120, command=self._clear_log)
         self.btn_clear_log.pack(anchor="w", padx=14, pady=(0, 12))
 
-        log_card = ctk.CTkFrame(main, corner_radius=12)
+        log_card = ctk.CTkFrame(main, corner_radius=14)
         log_card.pack(fill="both", expand=True)
-        ctk.CTkLabel(log_card, text="Atividade", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
+        ctk.CTkLabel(log_card, text="Atividade", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=14, pady=(10, 8))
         self.log = tk.Text(
             log_card,
             height=12,
@@ -496,8 +521,8 @@ class App:
         )
         self.log.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
-        self._append_log("Fluxo: escolher processo -> validar -> capturar/testar -> iniciar")
-        self._append_log("Para jogos, use modo compatibilidade.")
+        self._append_log("Atalho: F6 teste | F7 iniciar/parar | F8 capturar")
+        self._append_log("Recomendado: Background seguro (nao usa mouse real).")
         self._toggle_topmost()
         self._update_action_availability()
         self._on_click_mode_changed(self.click_mode_var.get())
@@ -508,7 +533,7 @@ class App:
         self.root.bind("<F8>", lambda _e: self._capture_point_interactive())
 
     def _get_click_mode(self):
-        if self.click_mode_var.get() == "Compatibilidade jogo (foco + click real)":
+        if self.click_mode_var.get() == CLICK_MODE_LABEL_COMPAT:
             return CLICK_MODE_COMPAT
         return CLICK_MODE_BACKGROUND
 
@@ -516,11 +541,28 @@ class App:
         mode = self._get_click_mode()
         if mode == CLICK_MODE_COMPAT:
             self.chk_force_foreground.configure(state="normal")
-            self._append_log("Modo: Compatibilidade jogo.")
-            self._set_next_step("teste 1 clique em modo compatibilidade.")
+            self._append_log("Modo compatibilidade: usa mouse real e pode atrapalhar seu trabalho.")
+            self._set_next_step("modo compatibilidade selecionado")
         else:
             self.chk_force_foreground.configure(state="disabled")
-            self._append_log("Modo: Background (PostMessage).")
+            self._compat_confirmed = False
+            self._append_log("Modo background seguro: nao usa mouse real.")
+            self._set_next_step("pronto para rodar em background")
+
+    def _confirm_compat_mode(self):
+        if self._get_click_mode() != CLICK_MODE_COMPAT:
+            return True
+        if self._compat_confirmed:
+            return True
+
+        ok = messagebox.askyesno(
+            "Aviso de Compatibilidade",
+            "Esse modo usa o mouse real e pode clicar fora se voce mover o cursor.\n\nContinuar mesmo assim?",
+        )
+        if ok:
+            self._compat_confirmed = True
+            return True
+        return False
 
     def _append_log(self, text: str):
         self.root.after(0, self._append_log_ui, text)
@@ -564,7 +606,7 @@ class App:
         self.btn_start.configure(state=start_state)
 
     def _set_next_step(self, text: str):
-        self.next_step_var.set(f"Passo atual: {text}")
+        self.next_step_var.set(text)
 
     def _clear_log(self):
         self.log.config(state="normal")
@@ -669,6 +711,9 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
+        if not self._confirm_compat_mode():
+            self._set_next_step("selecione background seguro para trabalhar sem interferencia")
+            return
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -692,7 +737,7 @@ class App:
             target_title,
             bool(self.pause_minimized_var.get()),
             self._get_click_mode(),
-            bool(self.force_foreground_var.get()),
+            bool(self.force_foreground_var.get() and self._get_click_mode() == CLICK_MODE_COMPAT),
         )
         self._append_log(f"Travado em HWND={target_hwnd}, PID={target_pid}, titulo='{target_title}'.")
         self.clicker.start()
@@ -742,6 +787,9 @@ class App:
         read_ok, title, x, y, interval = self._read_form_values()
         if not read_ok:
             return
+        if not self._confirm_compat_mode():
+            self._set_next_step("teste cancelado no modo compatibilidade")
+            return
         if interval <= 0:
             messagebox.showerror("Erro", "Intervalo precisa ser maior que 0.")
             return
@@ -763,7 +811,7 @@ class App:
                 target_title,
                 bool(self.pause_minimized_var.get()),
                 self._get_click_mode(),
-                bool(self.force_foreground_var.get()),
+                bool(self.force_foreground_var.get() and self._get_click_mode() == CLICK_MODE_COMPAT),
             )
             self.clicker._send_click(target_hwnd, x, y)
             mode_text = "compatibilidade" if self._get_click_mode() == CLICK_MODE_COMPAT else "background"
