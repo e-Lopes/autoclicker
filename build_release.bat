@@ -9,6 +9,7 @@ set "VERSION_FILE=VERSION"
 set "RELEASE_DIR=release"
 set "DIST_DIR=dist"
 set "BUILD_DIR=build"
+set "VENV_DIR=.buildenv"
 
 if exist "%VERSION_FILE%" (
     set /p APP_VERSION=<"%VERSION_FILE%"
@@ -37,21 +38,30 @@ if errorlevel 1 (
 )
 
 echo [1/7] Atualizando pip...
-python -m pip install --upgrade pip
+if not exist "%VENV_DIR%\Scripts\python.exe" (
+    echo [1/8] Criando ambiente virtual de build...
+    python -m venv "%VENV_DIR%"
+    if errorlevel 1 goto :error
+)
+
+set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
+
+echo [2/8] Atualizando pip...
+"%PYTHON_EXE%" -m pip install --upgrade pip
 if errorlevel 1 goto :error
 
-echo [2/7] Instalando dependencias...
-python -m pip install -r requirements.txt
+echo [3/8] Instalando dependencias...
+"%PYTHON_EXE%" -m pip install -r requirements.txt
 if errorlevel 1 goto :error
 
-echo [3/7] Limpando pastas de build...
+echo [4/8] Limpando pastas de build...
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
 if exist "%PACKAGE_PATH%" rmdir /s /q "%PACKAGE_PATH%"
 if exist "%ZIP_PATH%" del /q "%ZIP_PATH%"
 
-echo [4/7] Gerando executavel...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name %APP_NAME% %ENTRYPOINT%
+echo [5/8] Gerando executavel...
+"%PYTHON_EXE%" -m PyInstaller --noconfirm --clean --onefile --windowed --name %APP_NAME% %ENTRYPOINT%
 if errorlevel 1 goto :error
 
 if not exist "%DIST_DIR%\%APP_NAME%.exe" (
@@ -59,7 +69,7 @@ if not exist "%DIST_DIR%\%APP_NAME%.exe" (
     goto :error
 )
 
-echo [5/7] Montando pacote portavel...
+echo [6/8] Montando pacote portavel...
 mkdir "%PACKAGE_PATH%"
 copy /y "%DIST_DIR%\%APP_NAME%.exe" "%PACKAGE_PATH%\%APP_NAME%.exe" >nul
 
@@ -82,10 +92,10 @@ echo F7 = Iniciar/Parar
 echo F8 = Capturar ponto
 ) > "%PACKAGE_PATH%\LEIA-ME.txt"
 
-echo [6/7] Gerando checksum...
+echo [7/8] Gerando checksum...
 certutil -hashfile "%PACKAGE_PATH%\%APP_NAME%.exe" SHA256 > "%PACKAGE_PATH%\SHA256.txt"
 
-echo [7/7] Compactando zip...
+echo [8/8] Compactando zip...
 powershell -NoProfile -Command "Compress-Archive -Path '%PACKAGE_PATH%\*' -DestinationPath '%ZIP_PATH%' -Force"
 if errorlevel 1 goto :error
 
