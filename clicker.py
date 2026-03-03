@@ -13,6 +13,8 @@ import win32process
 
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 AUTO_TARGET_HINT = "merge tales"
+CLICK_MODE_BACKGROUND = "background_postmessage"
+CLICK_MODE_COMPAT = "compat_sendinput"
 
 
 def get_process_name(pid: int) -> str:
@@ -113,6 +115,8 @@ class WindowClicker:
         self.click_y = 350
         self.interval_seconds = 0.2
         self.pause_if_minimized = False
+        self.click_mode = CLICK_MODE_BACKGROUND
+        self.force_foreground = True
 
         self.on_log = None
         self.on_state_change = None
@@ -136,6 +140,8 @@ class WindowClicker:
         target_pid: int,
         target_title_exact: str,
         pause_if_minimized: bool,
+        click_mode: str,
+        force_foreground: bool,
     ):
         self.window_title_contains = window_title_contains.strip()
         self.click_x = click_x
@@ -145,6 +151,8 @@ class WindowClicker:
         self.target_pid = target_pid
         self.target_title_exact = target_title_exact or ""
         self.pause_if_minimized = pause_if_minimized
+        self.click_mode = click_mode
+        self.force_foreground = force_foreground
 
     def start(self):
         with self._lock:
@@ -194,12 +202,35 @@ class WindowClicker:
         local_x, local_y = win32gui.ScreenToClient(receiver_hwnd, screen_point)
         return receiver_hwnd, local_x, local_y
 
-    def _send_click(self, hwnd: int, x: int, y: int):
+    def _send_click_background(self, hwnd: int, x: int, y: int):
         receiver_hwnd, local_x, local_y = self._resolve_click_receiver(hwnd, x, y)
         lparam = win32api.MAKELONG(local_x, local_y)
         win32gui.PostMessage(receiver_hwnd, win32con.WM_MOUSEMOVE, 0, lparam)
         win32gui.PostMessage(receiver_hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
         win32gui.PostMessage(receiver_hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+
+    def _send_click_compat(self, hwnd: int, x: int, y: int):
+        screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
+        original_x, original_y = win32api.GetCursorPos()
+
+        if self.force_foreground:
+            try:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+                time.sleep(0.01)
+            except Exception:
+                pass
+
+        win32api.SetCursorPos((screen_x, screen_y))
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        win32api.SetCursorPos((original_x, original_y))
+
+    def _send_click(self, hwnd: int, x: int, y: int):
+        if self.click_mode == CLICK_MODE_COMPAT:
+            self._send_click_compat(hwnd, x, y)
+            return
+        self._send_click_background(hwnd, x, y)
 
     def _click_loop(self):
         while not self._exit_requested:
@@ -238,7 +269,7 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("AutoClicker de Janela")
-        self.root.geometry("760x590")
+        self.root.geometry("820x640")
         self.root.resizable(False, False)
 
         self.clicker = WindowClicker()
@@ -251,6 +282,8 @@ class App:
         self._test_after_capture = False
         self.topmost_var = tk.BooleanVar(value=True)
         self.pause_minimized_var = tk.BooleanVar(value=False)
+        self.force_foreground_var = tk.BooleanVar(value=True)
+        self.click_mode_var = tk.StringVar(value=CLICK_MODE_BACKGROUND)
         self.next_step_var = tk.StringVar(value="Passo atual: selecione a janela alvo.")
         self.target_var = tk.StringVar(value="Alvo: nenhum")
 
@@ -335,6 +368,27 @@ class App:
         self.entry_interval.insert(0, "0.2")
         self.entry_interval.pack(side="left", padx=(4, 0))
 
+        ttk.Label(row, text="Modo:").pack(side="left", padx=(14, 4))
+        self.cmb_click_mode = ttk.Combobox(
+            row,
+            state="readonly",
+            width=30,
+            values=[
+                "Background (PostMessage)",
+                "Compatibilidade jogo (foco + click real)",
+            ],
+        )
+        self.cmb_click_mode.current(0)
+        self.cmb_click_mode.pack(side="left")
+        self.cmb_click_mode.bind("<<ComboboxSelected>>", self._on_click_mode_changed)
+
+        self.chk_force_foreground = ttk.Checkbutton(
+            step2,
+            text="Forcar foco da janela alvo no modo compatibilidade",
+            variable=self.force_foreground_var,
+        )
+        self.chk_force_foreground.pack(anchor="w", pady=(6, 0))
+
         point_actions = ttk.Frame(step2)
         point_actions.pack(fill="x", pady=(8, 0))
 
@@ -379,13 +433,34 @@ class App:
         self.log.pack(fill="both", expand=True)
 
         self._append_log("Fluxo rapido: validar alvo -> capturar e testar -> iniciar.")
+        self._append_log(
+            "Se nao clicar em jogos, troque para: Modo = Compatibilidade jogo (foco + click real)."
+        )
         self._toggle_topmost()
         self._update_action_availability()
+        self._on_click_mode_changed()
 
     def _bind_shortcuts(self):
         self.root.bind("<F6>", lambda _e: self._test_single_click())
         self.root.bind("<F7>", lambda _e: self._toggle_run())
         self.root.bind("<F8>", lambda _e: self._capture_point_interactive())
+
+    def _get_click_mode(self):
+        if self.cmb_click_mode.current() == 1:
+            return CLICK_MODE_COMPAT
+        return CLICK_MODE_BACKGROUND
+
+    def _on_click_mode_changed(self, _event=None):
+        mode = self._get_click_mode()
+        self.click_mode_var.set(mode)
+
+        if mode == CLICK_MODE_COMPAT:
+            self.chk_force_foreground.config(state="normal")
+            self._append_log("Modo de clique: Compatibilidade jogo.")
+            self._set_next_step("teste 1 clique em modo compatibilidade.")
+        else:
+            self.chk_force_foreground.config(state="disabled")
+            self._append_log("Modo de clique: Background (PostMessage).")
 
     def _append_log(self, text: str):
         self.root.after(0, self._append_log_ui, text)
@@ -533,6 +608,8 @@ class App:
             target_pid,
             target_title,
             bool(self.pause_minimized_var.get()),
+            self._get_click_mode(),
+            bool(self.force_foreground_var.get()),
         )
         self._append_log(
             f"Travado em HWND={target_hwnd}, PID={target_pid}, titulo='{target_title}'."
@@ -611,9 +688,14 @@ class App:
                 target_pid,
                 target_title,
                 bool(self.pause_minimized_var.get()),
+                self._get_click_mode(),
+                bool(self.force_foreground_var.get()),
             )
             self.clicker._send_click(target_hwnd, x, y)
-            self._append_log(f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y}.")
+            mode_text = "compatibilidade" if self._get_click_mode() == CLICK_MODE_COMPAT else "background"
+            self._append_log(
+                f"Teste: 1 clique enviado para '{target_title}' em X={x}, Y={y} (modo: {mode_text})."
+            )
             self._set_next_step("se o clique funcionou, inicie o autoclick.")
         except Exception as exc:
             messagebox.showerror("Erro", f"Falha no teste de clique: {exc}")
