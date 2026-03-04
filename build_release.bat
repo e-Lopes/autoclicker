@@ -10,6 +10,8 @@ set "BUILD_DIR=build"
 set "DIST_DIR=dist"
 set "RELEASE_DIR=release"
 set "EXE_OUT=%RELEASE_DIR%\%APP_NAME%.exe"
+set "SHORTCUT_SCRIPT_IN=%CD%\CriarAtalhoDesktop.bat"
+set "SHORTCUT_SCRIPT_OUT=%RELEASE_DIR%\CriarAtalhoDesktop.bat"
 set "ZIP_OUT=%RELEASE_DIR%\%APP_NAME%-win64.zip"
 
 echo ============================================
@@ -53,13 +55,22 @@ if not exist "%DIST_DIR%\%APP_NAME%.exe" goto :error
 echo [5/6] Copiando executavel final...
 copy /y "%DIST_DIR%\%APP_NAME%.exe" "%EXE_OUT%" >nul
 
+if exist "%SHORTCUT_SCRIPT_IN%" (
+    copy /y "%SHORTCUT_SCRIPT_IN%" "%SHORTCUT_SCRIPT_OUT%" >nul
+)
+
 echo [6/6] Gerando zip...
-powershell -NoProfile -Command "Compress-Archive -Path '%EXE_OUT%' -DestinationPath '%ZIP_OUT%' -Force"
+if exist "%SHORTCUT_SCRIPT_OUT%" (
+    powershell -NoProfile -Command "Compress-Archive -Path '%EXE_OUT%','%SHORTCUT_SCRIPT_OUT%' -DestinationPath '%ZIP_OUT%' -Force"
+) else (
+    powershell -NoProfile -Command "Compress-Archive -Path '%EXE_OUT%' -DestinationPath '%ZIP_OUT%' -Force"
+)
 if errorlevel 1 goto :error
 
 echo.
 echo [SUCESSO] Release pronta:
 echo - %CD%\%EXE_OUT%
+if exist "%SHORTCUT_SCRIPT_OUT%" echo - %CD%\%SHORTCUT_SCRIPT_OUT%
 echo - %CD%\%ZIP_OUT%
 start "" explorer "%RELEASE_DIR%"
 pause
