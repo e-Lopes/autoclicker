@@ -1,0 +1,9 @@
+{
+  "crosvm": {
+    "process": "crosvm.exe",
+    "x": 780,
+    "y": 449,
+    "interval": 1.0,
+    "mode": "focusswap"
+  }
+}
